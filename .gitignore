@@ -1,0 +1,23 @@
+# Ambientes Virtuais (Pasta onde ficam as bibs locais)
+venv/
+.venv/
+env/
+
+# Python (Arquivos temporários de execução)
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Banco de Dados Local (Caso use SQLite para testes locais)
+*.db
+*.sqlite
+
+# Variáveis de Ambiente (SENSÍVEL: Nunca envie suas senhas!)
+.env
+
+# VS Code
+.vscode/
+
+# MacOS (Lixo do sistema)
+.DS_Store

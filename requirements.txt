@@ -1,0 +1,17 @@
+# Web Framework
+streamlit
+
+# Banco de Dados e ORM
+sqlalchemy
+psycopg2-binary
+
+# Processamento de Dados
+pandas
+numpy
+
+# Testes
+pytest
+
+# Utilidades
+python-dotenv
+requests

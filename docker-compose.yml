@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:15
+    container_name: fipe_db_container
+    restart: always
+    environment:
+      POSTGRES_USER: user_fipe
+      POSTGRES_PASSWORD: password_fipe
+      POSTGRES_DB: fipe_db
+    ports:
+      - "5432:5432"
+
+  adminer:
+    image: adminer
+    container_name: fipe_adminer
+    restart: always
+    ports:
+      - "8080:8080"
