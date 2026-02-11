@@ -1,67 +1,51 @@
-#import streamlit as st
-
-#st.title("🚗 FipeHUb")
-#st.write("A base do projeto está pronta!")
-
-#if st.button('Testar Banco de Dados'):
-    # Importar sua lógica de conexão aqui depois
-    #st.success("Botão funcionando!")
-
 import streamlit as st
-from infra.api_client import get_marcas, get_modelos, get_anos, get_preco
-from infra.database import init_db, salvar_consulta
+from infra.database import init_db
 
-# Inicializar Banco
+# Importando TODAS as visualizações
+from views.home import render_home
+from views.admin import render_admin
+from views.gerente import render_gerente
+from views.coordenador import render_coordenador
+from views.pesquisador import render_pesquisador
+from views.lojista import render_lojista
+
+# Inicialização do Banco
 init_db()
 
-st.set_page_config(page_title="VeloGeo - Consulta FIPE", layout="wide")
+# Configuração de Página
+st.set_page_config(page_title="FipeHub", layout="wide", page_icon="🚗")
 
-# Sidebar para Abstração de Papéis
-st.sidebar.title("Menu de Acesso")
-papel = st.sidebar.selectbox("Seu Papel", ["Usuário (Consulta)", "Coordenador (Regiões)", "Pesquisador (Coleta)"])
-
-if papel == "Usuário (Consulta)":
-    st.title("🚗 Consulta de Preços FIPE")
+# --- SIDEBAR ---
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/741/741407.png", width=80)
+    st.title("FipeHub System")
+    st.markdown("---")
     
-    # Colunas para os Seletores
-    col1, col2, col3 = st.columns(3)
+    menu = st.selectbox(
+        "Selecione o Portal de Acesso:",
+        [
+            "🏠 Home", 
+            "⚙️ Área do Administrador", 
+            "📊 Área do Gerente", 
+            "📍 Área do Coordenador", 
+            "🔍 Área do Pesquisador", 
+            "🏪 Área do Lojista"
+        ]
+    )
     
-    with col1:
-        marcas = get_marcas()
-        marca_nome = st.selectbox("Selecione a Marca", [m['nome'] for m in marcas])
-        marca_id = next(m['codigo'] for m in marcas if m['nome'] == marca_nome)
+    st.markdown("---")
+    st.caption(f"Acesso Nível: **{menu.split()[-1]}**")
 
-    with col2:
-        modelos = get_modelos(marca_id)
-        modelo_nome = st.selectbox("Selecione o Modelo", [mod['nome'] for mod in modelos])
-        modelo_id = next(mod['codigo'] for mod in modelos if mod['nome'] == modelo_nome)
+# --- DICIONÁRIO DE ROTEAMENTO ---
+# Mapeia o nome do menu para a função correspondente
+paginas = {
+    "🏠 Home": render_home,
+    "⚙️ Área do Administrador": render_admin,
+    "📊 Área do Gerente": render_gerente,
+    "📍 Área do Coordenador": render_coordenador,
+    "🔍 Área do Pesquisador": render_pesquisador,
+    "🏪 Área do Lojista": render_lojista
+}
 
-    with col3:
-        anos = get_anos(marca_id, modelo_id)
-        ano_label = st.selectbox("Selecione o Ano", [a['nome'] for a in anos])
-        ano_id = next(a['codigo'] for a in anos if a['nome'] == ano_label)
-
-    if st.button("Verificar Preço"):
-        dados_preco = get_preco(marca_id, modelo_id, ano_id)
-        
-        if dados_preco:
-            st.metric(label=f"Preço Médio - {dados_preco['Modelo']}", value=dados_preco['Valor'])
-            st.info(f"Referência: {dados_preco['MesReferencia']} | Combustível: {dados_preco['Combustivel']}")
-            
-            # Persistência no Banco (Parte do seu TD)
-            salvar_consulta({
-                'marca': marca_nome,
-                'modelo': modelo_nome,
-                'ano': ano_label,
-                'preco': dados_preco['Valor']
-            })
-            st.toast("Consulta salva no banco de dados!")
-
-elif papel == "Coordenador (Regiões)":
-    st.header("📍 Painel do Coordenador")
-    st.warning("Área sob abstração: Aqui seriam integrados os dados do IBGE para visão regional.")
-    # Aqui entraria o mapa futuro
-
-else:
-    st.header("📝 Área do Pesquisador")
-    st.info("Área sob abstração: Interface para input manual de novos dados de mercado.")
+# Executa a função da página selecionada
+paginas[menu]()
