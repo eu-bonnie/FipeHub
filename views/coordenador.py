@@ -16,7 +16,7 @@ def render_coordenador():
         "🚗 Validar Coletas"
     ])
 
-    # --- ABA 1: DEFINIÇÃO DE ZONAS (Seu código original aqui) ---
+    # --- ABA 1: DEFINIÇÃO DE ZONAS ---
     with tab_zonas:
         st.subheader("Desenhe o quadrado da área de atuação no mapa")
         
@@ -26,7 +26,7 @@ def render_coordenador():
         with col_input2:
             cidade = st.text_input("Nome da Região/Cidade", key="cidade_coord")
 
-        m = folium.Map(location=[-15.78, -47.93], zoom_start=4)
+        m = folium.Map(location=[-1.4558, -48.4902], zoom_start=12) # Focado em Belém
         draw = Draw(
             draw_options={
                 'polyline': False, 'polygon': False, 'circle': False, 
@@ -37,7 +37,7 @@ def render_coordenador():
 
         output = st_folium(m, width=900, height=500, key="mapa_coordenador")
 
-        if output['all_drawings']:
+        if output.get('all_drawings'):
             desenho = output['all_drawings'][-1]
             if desenho['geometry']['type'] == 'Polygon':
                 coords = desenho['geometry']['coordinates'][0]
@@ -89,11 +89,11 @@ def render_coordenador():
                             conn.commit()
                         st.rerun()
 
-    # --- ABA 3: VALIDAR COLETAS (O que o pesquisador mandou) ---
+    # --- ABA 3: VALIDAR COLETAS CORRIGIDA ---
     with tab_coletas:
         st.subheader("📋 Validação de Levantamentos de Campo")
         
-        # SQL que traz as coletas pendentes e informações da área relacionada
+        # CORREÇÃO: Buscando status 'Pendente' que é o que o pesquisador envia
         query_coletas = """
             SELECT 
                 c.id, c.marca, c.modelo, c.ano, c.preco_anunciado, c.data_coleta,
@@ -102,7 +102,7 @@ def render_coordenador():
             FROM coletas_campo c
             JOIN areas_pesquisa a ON c.area_id = a.id
             LEFT JOIN lojas l ON c.loja_id = l.id
-            WHERE c.status = 'Aguardando Aprovação'
+            WHERE c.status IN ('Pendente', 'Aguardando Aprovação')
             ORDER BY a.municipio, c.data_coleta DESC
         """
         df_coletas = pd.read_sql(query_coletas, engine)
@@ -110,31 +110,28 @@ def render_coordenador():
         if df_coletas.empty:
             st.info("Nenhuma coleta pendente de validação.")
         else:
-            # Agrupamos primeiro pela ÁREA (Município + Mês)
+            # Garantir que a data está em formato datetime para o strftime não quebrar
+            df_coletas['data_coleta'] = pd.to_datetime(df_coletas['data_coleta'])
+
             for (mun, mes), grupo_area in df_coletas.groupby(['municipio', 'mes_referencia']):
                 st.markdown(f"### 📍 Região: {mun} ({mes})")
                 
-                # Dentro da área, agrupamos por LOJA e HORA da coleta
                 for (loja, data), grupo_loja in grupo_area.groupby(['nome_local', 'data_coleta']):
                     with st.container(border=True):
-                        # Cabeçalho da Coleta
                         c_head1, c_head2 = st.columns([3, 1])
                         c_head1.write(f"🏠 **Loja:** {loja}")
                         c_head2.write(f"🕒 {data.strftime('%d/%m/%Y %H:%M')}")
                         
                         st.divider()
 
-                        # Lista de Carros coletados naquela loja naquele momento
                         for _, row in grupo_loja.iterrows():
                             col_car, col_btn = st.columns([3, 1])
                             
                             with col_car:
                                 st.write(f"🚗 **{row['marca']} {row['modelo']}** - Ano: {row['ano']}")
-                                # Correção visual do R$ (sem LaTeX)
                                 st.write(f"💰 Preço Informado: R$ {row['preco_anunciado']}")
                             
                             with col_btn:
-                                # Botões de ação por veículo
                                 if st.button("✅ Validar", key=f"val_{row['id']}"):
                                     with engine.connect() as conn:
                                         conn.execute(text("UPDATE coletas_campo SET status = 'Aprovado' WHERE id = :id"), {"id": row['id']})
@@ -146,4 +143,3 @@ def render_coordenador():
                                         conn.execute(text("UPDATE coletas_campo SET status = 'Descartado' WHERE id = :id"), {"id": row['id']})
                                         conn.commit()
                                     st.rerun()
-                st.write("---") # Separador entre áreas diferentes
