@@ -6,7 +6,7 @@ DB_URL = "postgresql://user_fipe:password_fipe@localhost:5432/fipe_db"
 engine = create_engine(DB_URL)
 
 def init_db():
-    """Cria as tabelas iniciais e de geolocalização se não existirem."""
+    """Cria as tabelas iniciais, geolocalização e usuários se não existirem."""
     with engine.connect() as conn:
         # 1. Tabela de Logs de Consulta (Home)
         conn.execute(text("""
@@ -34,7 +34,51 @@ def init_db():
                 data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """))
-        
+
+        # 3. Tabela de Lojas
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS lojas (
+                id SERIAL PRIMARY KEY,
+                nome_loja VARCHAR(150),
+                endereco VARCHAR(255),
+                cnpj VARCHAR(20),
+                status VARCHAR(20) DEFAULT 'Pendente' -- Pendente, Aprovada, Rejeitada
+            );
+        """))
+
+        # 4. Tabela de Coletas do Pesquisador
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS coletas_campo (
+                id SERIAL PRIMARY KEY,
+                area_id INTEGER REFERENCES areas_pesquisa(id),
+                loja_id INTEGER, -- Pode ser ID da tabela lojas ou NULL se for "Outros"
+                loja_nome_manual VARCHAR(150), -- Se for "Outros"
+                marca VARCHAR(100),
+                modelo VARCHAR(100),
+                ano VARCHAR(20),
+                preco_anunciado VARCHAR(50),
+                status VARCHAR(20) DEFAULT 'Aguardando Aprovação',
+                data_coleta TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """))
+
+        # 5. Tabela de Usuários e Controle de Acesso
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                codigo VARCHAR(20) NOT NULL,
+                perfil VARCHAR(20) NOT NULL -- Admin, Coordenador, Pesquisador, Lojista
+            );
+        """))
+
+        # 6. Criar Admin Inicial (caso não exista) para permitir o primeiro acesso
+        conn.execute(text("""
+            INSERT INTO usuarios (username, codigo, perfil) 
+            VALUES ('admin', '1234', 'Admin') 
+            ON CONFLICT (username) DO NOTHING;
+        """))
+
         conn.commit()
 
 def salvar_consulta(dados):

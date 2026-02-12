@@ -8,6 +8,7 @@ from views.gerente import render_gerente
 from views.coordenador import render_coordenador
 from views.pesquisador import render_pesquisador
 from views.lojista import render_lojista
+from src.auth import check_login
 
 # Inicialização do Banco
 init_db()
@@ -25,27 +26,43 @@ with st.sidebar:
         "Selecione o Portal de Acesso:",
         [
             "🏠 Home", 
-            "⚙️ Área do Administrador", 
-            "📊 Área do Gerente", 
-            "📍 Área do Coordenador", 
-            "🔍 Área do Pesquisador", 
-            "🏪 Área do Lojista"
+            "⚙️ Administrador", 
+            "📊 Gerente", 
+            "📍 Coordenador", 
+            "🔍 Pesquisador", 
+            "🏪 Lojista"
         ]
     )
     
     st.markdown("---")
-    st.caption(f"Acesso Nível: **{menu.split()[-1]}**")
+    # Rodapé do Sidebar com Logout
+    if st.session_state.get('logged_in'):
+        st.write(f"Logado como: **{st.session_state.get('username')}**")
+        if st.button("Sair (Logout)"):
+            st.session_state.clear()
+            st.rerun()
 
-# --- DICIONÁRIO DE ROTEAMENTO ---
-# Mapeia o nome do menu para a função correspondente
-paginas = {
-    "🏠 Home": render_home,
-    "⚙️ Área do Administrador": render_admin,
-    "📊 Área do Gerente": render_gerente,
-    "📍 Área do Coordenador": render_coordenador,
-    "🔍 Área do Pesquisador": render_pesquisador,
-    "🏪 Área do Lojista": render_lojista
-}
+# --- CONTROLE DE NAVEGAÇÃO E ACESSO ---
 
-# Executa a função da página selecionada
-paginas[menu]()
+if menu == "🏠 Home":
+    render_home()
+
+elif menu == "⚙️ Administrador":
+    if check_login("Admin"):
+        render_admin()
+
+elif menu == "📊 Gerente":
+    if check_login("Gerente"):
+        render_gerente()
+
+elif menu == "📍 Coordenador":
+    if check_login("Coordenador"):
+        render_coordenador()
+
+elif menu == "🔍 Pesquisador":
+    if check_login("Pesquisador"):
+        render_pesquisador()
+
+elif menu == "🏪 Lojista":
+    if check_login("Lojista"):
+        render_lojista()
