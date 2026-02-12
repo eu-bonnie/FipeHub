@@ -4,6 +4,7 @@ from streamlit_folium import st_folium
 import pandas as pd
 from infra.database import engine
 from sqlalchemy import text
+from datetime import date
 
 def render_pesquisador():
     st.title("🔍 Painel do Pesquisador")
@@ -12,11 +13,10 @@ def render_pesquisador():
 
     with tab_mapa:
         st.subheader("Selecione uma área para iniciar o levantamento")
-        # Só mostra áreas com status 'Pendente'
         df_areas = pd.read_sql("SELECT * FROM areas_pesquisa WHERE status = 'Pendente'", engine)
 
         if df_areas.empty:
-            st.info("Você concluiu todas as zonas atribuídas! Aguarde novas ordens do coordenador.")
+            st.info("Você concluiu todas as zonas atribuídas!")
         else:
             for index, area in df_areas.iterrows():
                 with st.expander(f"📍 Área: {area['municipio']} ({area['mes_referencia']})"):
@@ -30,7 +30,6 @@ def render_pesquisador():
                     ).add_to(map_missao)
                     st_folium(map_missao, width=700, height=300, key=f"map_{area['id']}")
 
-                    # Ativar formulário no session_state
                     if f"form_ativo_{area['id']}" not in st.session_state:
                         st.session_state[f"form_ativo_{area['id']}"] = False
 
@@ -39,82 +38,81 @@ def render_pesquisador():
 
                     if st.session_state[f"form_ativo_{area['id']}"]:
                         st.markdown("---")
-                        qtd_lojas = st.number_input("Quantas lojas você visitou nesta área?", min_value=1, step=1, key=f"n_lojas_{area['id']}")
+                        
+                        # DATA DE REFERÊNCIA
+                        data_ref_geral = st.date_input("Data de Referência", value=date.today(), key=f"dt_ref_{area['id']}")
+
+                        qtd_lojas = st.number_input("Lojas visitadas", min_value=1, step=1, key=f"n_lojas_{area['id']}")
                         
                         df_lojas = pd.read_sql("SELECT id, nome_loja FROM lojas WHERE status = 'Aprovada'", engine)
                         lista_lojas = ["Outros (Nova Loja)"] + df_lojas['nome_loja'].tolist()
 
-                        # Loop de Lojas
                         for i in range(int(qtd_lojas)):
                             with st.container(border=True):
                                 st.subheader(f"🏪 Loja #{i+1}")
                                 l_sel = st.selectbox("Selecione a Loja", lista_lojas, key=f"loja_sel_{area['id']}_{i}")
+                                l_man_input = ""
                                 if l_sel == "Outros (Nova Loja)":
-                                    st.text_input("Nome da Loja Local", key=f"man_{area['id']}_{i}")
+                                    l_man_input = st.text_input("Nome da Loja Local", key=f"man_{area['id']}_{i}")
 
-                                # Controle de quantos carros por esta loja específica
                                 key_car_count = f"car_count_{area['id']}_{i}"
                                 if key_car_count not in st.session_state:
                                     st.session_state[key_car_count] = 1
                                 
-                                # Loop de Carros dentro da Loja
                                 for j in range(st.session_state[key_car_count]):
                                     st.markdown(f"**🚗 Veículo {j+1}**")
                                     c1, c2, c3, c4 = st.columns(4)
-                                    with c1: st.text_input("Marca", key=f"ma_{area['id']}_{i}_{j}")
-                                    with c2: st.text_input("Modelo", key=f"mo_{area['id']}_{i}_{j}")
+                                    with c1: 
+                                        df_m = pd.read_sql("SELECT nome FROM marcas_custom ORDER BY nome", engine)
+                                        marca_escolhida = st.selectbox("Marca", df_m['nome'].tolist(), key=f"ma_{area['id']}_{i}_{j}")
+                                    with c2: 
+                                        query_mod = text("SELECT nome FROM modelos_custom WHERE marca_nome = :m ORDER BY nome")
+                                        df_mod = pd.read_sql(query_mod, engine, params={"m": marca_escolhida})
+                                        st.selectbox("Modelo", df_mod['nome'].tolist(), key=f"mo_{area['id']}_{i}_{j}")
                                     with c3: st.text_input("Ano", key=f"an_{area['id']}_{i}_{j}")
                                     with c4: st.text_input("Preço R$", key=f"pr_{area['id']}_{i}_{j}")
                                 
-                                if st.button(f"➕ Adicionar outro carro na Loja #{i+1}", key=f"add_car_{area['id']}_{i}"):
+                                if st.button(f"➕ Add carro na Loja #{i+1}", key=f"add_car_{area['id']}_{i}"):
                                     st.session_state[key_car_count] += 1
                                     st.rerun()
 
-                        # --- BOTÃO FINALIZAR ÁREA ---
-                        if st.button("Finalizar e Enviar Área Completa", type="primary", key=f"final_{area['id']}"):
+                        if st.button("Finalizar e Enviar", type="primary", key=f"final_{area['id']}"):
                             with engine.connect() as conn:
-                                # 1. Salvar todas as coletas (Loop de Lojas e Carros)
                                 for i in range(int(qtd_lojas)):
                                     num_carros = st.session_state.get(f"car_count_{area['id']}_{i}", 1)
                                     for j in range(num_carros):
                                         s = st.session_state
-                                        # Captura dados
-                                        l_sel = s.get(f"loja_sel_{area['id']}_{i}")
-                                        l_man = s.get(f"man_{area['id']}_{i}", "")
-                                        marca = s.get(f"ma_{area['id']}_{i}_{j}")
-                                        modelo = s.get(f"mo_{area['id']}_{i}_{j}")
-                                        ano = s.get(f"an_{area['id']}_{i}_{j}")
-                                        preco = s.get(f"pr_{area['id']}_{i}_{j}")
-
-                                        # Busca ID da loja se não for manual
+                                        l_sel_val = s.get(f"loja_sel_{area['id']}_{i}")
+                                        l_man_val = s.get(f"man_{area['id']}_{i}", "")
+                                        
                                         l_id = None
-                                        if l_sel != "Outros (Nova Loja)":
-                                            res_loja = conn.execute(text("SELECT id FROM lojas WHERE nome_loja = :nome"), {"nome": l_sel}).fetchone()
-                                            if res_loja: l_id = res_loja[0]
+                                        if l_sel_val != "Outros (Nova Loja)":
+                                            res = conn.execute(text("SELECT id FROM lojas WHERE nome_loja = :n"), {"n": l_sel_val}).fetchone()
+                                            if res: l_id = res[0]
 
-                                        # Executa o INSERT
                                         conn.execute(text("""
                                             INSERT INTO coletas_campo 
-                                            (area_id, loja_id, loja_nome_manual, marca, modelo, ano, preco_anunciado, status)
-                                            VALUES (:a_id, :l_id, :l_man, :ma, :mo, :an, :pr, 'Aguardando Aprovação')
+                                            (area_id, loja_id, loja_nome_manual, marca, modelo, ano, preco_anunciado, data_coleta, status)
+                                            VALUES (:a_id, :l_id, :l_man, :ma, :mo, :an, :pr, :dt, 'Pendente')
                                         """), {
-                                            "a_id": area['id'], "l_id": l_id, "l_man": l_man,
-                                            "ma": marca, "mo": modelo, "an": ano, "pr": preco
+                                            "a_id": area['id'], "l_id": l_id, "l_man": l_man_val,
+                                            "ma": s.get(f"ma_{area['id']}_{i}_{j}"),
+                                            "mo": s.get(f"mo_{area['id']}_{i}_{j}"),
+                                            "an": s.get(f"an_{area['id']}_{i}_{j}"),
+                                            "pr": s.get(f"pr_{area['id']}_{i}_{j}"),
+                                            "dt": data_ref_geral
                                         })
-                                
-                                # 2. Atualizar status da ÁREA para sumir da lista
                                 conn.execute(text("UPDATE areas_pesquisa SET status = 'Em Análise' WHERE id = :id"), {"id": area['id']})
                                 conn.commit()
-                            
-                            st.success("Tudo enviado com sucesso!")
+                            st.success("Enviado!")
                             st.session_state[f"form_ativo_{area['id']}"] = False
                             st.rerun()
 
-    # --- ABA 2: MEUS ENVIOS ---
+    # --- ABA 2: HISTÓRICO CORRIGIDA ---
     with tab_meus_envios:
-        st.subheader("Histórico de Levantamentos Realizados")
+        st.subheader("Histórico de Coletas")
         
-        query_historico = """
+        query_h = """
             SELECT 
                 c.marca, c.modelo, c.ano, c.preco_anunciado, c.status, c.data_coleta,
                 COALESCE(l.nome_loja, c.loja_nome_manual) as local_pesquisa
@@ -122,33 +120,30 @@ def render_pesquisador():
             LEFT JOIN lojas l ON c.loja_id = l.id
             ORDER BY c.data_coleta DESC
         """
-        df_historico = pd.read_sql(query_historico, engine)
+        try:
+            df_h = pd.read_sql(query_h, engine)
+            if df_h.empty:
+                st.info("Nenhuma coleta encontrada.")
+            else:
+                # --- CORREÇÃO AQUI: Converter para datetime e formatar ---
+                df_h['data_coleta'] = pd.to_datetime(df_h['data_coleta'])
+                df_h['status'] = df_h['status'].fillna('Pendente')
+                
+                status_opcoes = ["Pendente", "Aprovado", "Descartado", "Aguardando Aprovação"]
+                filtro = st.multiselect("Filtrar status:", status_opcoes, default=["Pendente", "Aprovado", "Aguardando Aprovação"])
+                
+                df_mostra = df_h[df_h['status'].isin(filtro)]
 
-        if df_historico.empty:
-            st.info("Você ainda não realizou nenhuma coleta.")
-        else:
-            status_filtro = st.multiselect("Filtrar por Status:", ["Aguardando Aprovação", "Aprovado", "Descartado"], default=["Aguardando Aprovação", "Aprovado"])
-            df_filtrado = df_historico[df_historico['status'].isin(status_filtro)]
-
-            # Agrupamos por Local e Data/Hora para mostrar a Loja no topo
-            for (local, data), group in df_filtrado.groupby(['local_pesquisa', 'data_coleta']):
-                with st.container(border=True):
-                    # --- CABEÇALHO DO CARD (Loja e Horário) ---
-                    col_header_1, col_header_2 = st.columns([3, 1])
-                    col_header_1.markdown(f"### 🏪 {local}")
-                    col_header_2.write(f"🕒 {data.strftime('%H:%M')}")
-                    st.caption(f"📅 Data: {data.strftime('%d/%m/%Y')}")
-                    
-                    st.divider() # Linha separadora
-                    
-                    # --- CORPO DO CARD (Lista de Carros) ---
-                    for _, item in group.iterrows():
-                        cor = "orange" if item['status'] == "Aguardando Aprovação" else "green" if item['status'] == "Aprovado" else "red"
-                        
-                        c1, c2, c3 = st.columns([2, 1, 1])
-                        c1.write(f"🚗 **{item['marca']} {item['modelo']}** ({item['ano']})")
-                        
-                        # Correção do R$: usamos markdown com o símbolo de escape ou apenas f-string limpa
-                        c2.write(f"R$ {item['preco_anunciado']}") 
-                        
-                        c3.markdown(f":{cor}[**{item['status']}**]")
+                for (local, data), group in df_mostra.groupby(['local_pesquisa', 'data_coleta']):
+                    with st.container(border=True):
+                        # --- CORREÇÃO NA EXIBIÇÃO: data.strftime('%d/%m/%Y') ---
+                        st.markdown(f"**🏪 {local}** | 📅 {data.strftime('%d/%m/%Y')}")
+                        for _, item in group.iterrows():
+                            cor = "orange" if "Pendente" in item['status'] or "Aguardando" in item['status'] else "green" if item['status'] == "Aprovado" else "red"
+                            
+                            c1, c2, c3 = st.columns([2, 1, 1])
+                            c1.write(f"{item['marca']} {item['modelo']}")
+                            c2.write(f"R$ {item['preco_anunciado']}")
+                            c3.markdown(f":{cor}[{item['status']}]")
+        except Exception as e:
+            st.error(f"Erro ao carregar histórico: {e}")

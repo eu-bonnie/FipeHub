@@ -79,6 +79,24 @@ def init_db():
             ON CONFLICT (username) DO NOTHING;
         """))
 
+        # Tabela para Marcas Manuais
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS marcas_custom (
+                id SERIAL PRIMARY KEY,
+                nome VARCHAR(100) UNIQUE NOT NULL
+            );
+        """))
+        
+        # Tabela para Modelos Manuais
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS modelos_custom (
+                id SERIAL PRIMARY KEY,
+                marca_nome VARCHAR(100) NOT NULL,
+                nome VARCHAR(100) NOT NULL,
+                UNIQUE(marca_nome, nome)
+            );
+        """))
+
         conn.commit()
 
 def salvar_consulta(dados):

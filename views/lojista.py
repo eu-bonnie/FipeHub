@@ -6,13 +6,13 @@ from infra.database import engine
 def render_lojista():
     st.title("🏪 Área do Lojista")
 
-    tab_cadastro, tab_meus_envios, tab_insights = st.tabs([
+    tab_cadastro, tab_meus_envios, tab_lojas_ativas = st.tabs([
         "🆕 Solicitar Cadastro", 
         "📋 Minhas Solicitações",
-        "📊 Posicionamento de Mercado"
+        "✅ Lojas Ativas"
     ])
 
-    # --- ABA 1: CADASTRO (Mantemos o código anterior) ---
+    # --- ABA 1: CADASTRO (Mantida conforme original) ---
     with tab_cadastro:
         st.subheader("Cadastre seu estabelecimento")
         with st.form("form_nova_loja", clear_on_submit=True):
@@ -29,8 +29,9 @@ def render_lojista():
                         conn.commit()
                     st.success("✅ Solicitação enviada!")
 
-    # --- ABA 2: MINHAS SOLICITAÇÕES ---
+    # --- ABA 2: MINHAS SOLICITAÇÕES (Mantida conforme original) ---
     with tab_meus_envios:
+        st.subheader("Histórico de solicitações")
         df_lojas = pd.read_sql("SELECT * FROM lojas ORDER BY id DESC", engine)
         if df_lojas.empty:
             st.info("Nenhuma solicitação encontrada.")
@@ -41,26 +42,25 @@ def render_lojista():
                     st.markdown(f"**{loja['nome_loja']}** - :{cor}[{loja['status'].upper()}]")
                     st.caption(f"📍 {loja['endereco']}")
 
-    # --- ABA 3: INSIGHTS (Simplificada) ---
-    with tab_insights:
-        st.subheader("Análise de Visitas")
+    # --- ABA 3: LOJAS ATIVAS (Apenas visualização do que está aprovado) ---
+    with tab_lojas_ativas:
+        st.subheader("Unidades em Operação")
         
-        # Busca a primeira loja aprovada
-        loja_aprovada = pd.read_sql("SELECT id, nome_loja FROM lojas WHERE status = 'Aprovada' LIMIT 1", engine)
+        # Filtra apenas o que o coordenador já aprovou
+        query_ativas = "SELECT nome_loja, cnpj, endereco FROM lojas WHERE status = 'Aprovada' ORDER BY nome_loja"
+        df_ativas = pd.read_sql(query_ativas, engine)
         
-        if loja_aprovada.empty:
-            st.warning("📊 Os insights ficarão disponíveis assim que sua loja for aprovada.")
+        if df_ativas.empty:
+            st.warning("Nenhuma loja ativa no momento. Aguarde a aprovação das suas solicitações.")
         else:
-            # Conversão segura para int (evita o erro numpy que tivemos antes)
-            id_loja = int(loja_aprovada.iloc[0]['id'])
-            nome_loja = loja_aprovada.iloc[0]['nome_loja']
-
-            # Query para contar visitas validadas
-            metrics_query = text("SELECT COUNT(*) FROM coletas_campo WHERE loja_id = :id AND status = 'Aprovado'")
-            with engine.connect() as conn:
-                total_coletas = conn.execute(metrics_query, {"id": id_loja}).scalar()
-
-            # Exibição de métricas simples
-            col_m1, col_m2 = st.columns(2)
-            col_m1.metric("Visitas Validadas", f"{total_coletas}")
-            col_m2.metric("Loja Credenciada", "Ativa")
+            # Exibe uma lista limpa das lojas
+            for _, loja in df_ativas.iterrows():
+                with st.container(border=True):
+                    c1, c2 = st.columns([3, 1])
+                    with c1:
+                        st.markdown(f"### 🏪 {loja['nome_loja']}")
+                        st.write(f"**CNPJ:** {loja['cnpj']}")
+                        st.write(f"**Endereço:** {loja['endereco']}")
+                    with c2:
+                        st.write("") # Espaçador
+                        st.success("ATIVO")
