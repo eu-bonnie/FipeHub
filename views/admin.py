@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import text
 from infra.database import engine
+import re
 
 def render_admin():
     st.title("📊 Painel Administrativo")
@@ -10,14 +11,10 @@ def render_admin():
     # --- 1. BUSCA DE DADOS PARA KPIs ---
     try:
         with engine.connect() as conn:
-            # Status 'Aprovada' para Lojas e 'Aprovado' para Coletas
             qtd_lojas = conn.execute(text("SELECT COUNT(*) FROM lojas WHERE status = 'Aprovada'")).scalar() or 0
             qtd_coletas = conn.execute(text("SELECT COUNT(*) FROM coletas_campo WHERE status = 'Aprovado'")).scalar() or 0
-            
-            # Buscas totais capturadas pela Home
             qtd_buscas = conn.execute(text("SELECT COUNT(*) FROM buscas_log")).scalar() or 0 
 
-            # Modelo mais pesquisado pelos usuários (visto no Log da Home)
             query_top = text("""
                 SELECT modelo, COUNT(*) as total 
                 FROM buscas_log 
@@ -43,24 +40,51 @@ def render_admin():
     tab_dashboard, tab_usuarios = st.tabs(["📈 Monitoramento", "👤 Gerenciar Acessos"])
 
     with tab_dashboard:
-        # 1.1 Tabela de Últimas Pesquisas (Puxando dados da Home)
-        st.markdown("### 🕒 Últimas Consultas Realizadas")
+        st.markdown("### 🕒 Histórico Recente de Consultas")
         query_logs = "SELECT marca, modelo, ano, preco, data_consulta FROM buscas_log ORDER BY data_consulta DESC LIMIT 10"
         
         try:
             df_logs = pd.read_sql(text(query_logs), engine)
+            
             if not df_logs.empty:
-                # AJUSTE: Convertendo para datetime e formatando para mostrar APENAS A DATA
+                # 1. AJUSTE DA DATA: Converte para datetime e formata para o padrão brasileiro
                 df_logs['data_consulta'] = pd.to_datetime(df_logs['data_consulta']).dt.strftime('%d/%m/%Y')
-                
+
+                # 2. LIMPEZA DO PREÇO: Função robusta para converter qualquer formato em float
+                def limpar_preco_para_float(valor):
+                    if valor is None or valor == '': return 0.0
+                    if isinstance(valor, (int, float)): return float(valor)
+                    
+                    # Remove R$, espaços e pontos de milhar, garante que o decimal seja ponto
+                    texto = str(valor).replace('R$', '').replace(' ', '')
+                    
+                    # Se houver vírgula e ponto, remove o ponto (milhar) e troca a vírgula (decimal)
+                    if ',' in texto and '.' in texto:
+                        texto = texto.replace('.', '').replace(',', '.')
+                    # Se houver apenas vírgula, troca por ponto
+                    elif ',' in texto:
+                        texto = texto.replace(',', '.')
+                        
+                    try:
+                        return float(texto)
+                    except ValueError:
+                        return 0.0
+
+                df_logs['preco'] = df_logs['preco'].apply(limpar_preco_para_float)
+
+                # 3. EXIBIÇÃO EM TABELA: Uso de column_config para formatação de moeda
                 st.dataframe(
                     df_logs,
                     column_config={
                         "marca": "Marca",
                         "modelo": "Modelo",
                         "ano": "Ano",
-                        "preco": st.column_config.NumberColumn("Preço Médio", format="R$ %.2f"),
-                        "data_consulta": "Data da Busca"
+                        "preco": st.column_config.NumberColumn(
+                            "Preço Médio",
+                            format="R$ %.2f", # Formata visualmente como moeda
+                            help="Valor capturado durante a consulta"
+                        ),
+                        "data_consulta": "Data da Consulta"
                     },
                     use_container_width=True,
                     hide_index=True
@@ -68,11 +92,11 @@ def render_admin():
             else:
                 st.info("Nenhuma consulta registrada na Home ainda.")
         except Exception as e:
-            st.error("Erro ao carregar a tabela de logs de consulta.")
+            st.error(f"Erro ao carregar histórico: {e}")
 
         st.divider()
 
-        # 1.2 Gráfico de Tendência (O que os clientes estão buscando na Home)
+        # --- GRÁFICO DE TENDÊNCIA ---
         st.markdown("### 📊 Tendência: Modelos mais Pesquisados")
         query_grafico = """
             SELECT modelo, COUNT(*) as quantidade 
@@ -80,19 +104,15 @@ def render_admin():
             GROUP BY modelo 
             ORDER BY quantidade DESC LIMIT 10
         """
-        
         try:
             df_grafico = pd.read_sql(text(query_grafico), engine)
             if not df_grafico.empty:
                 st.bar_chart(df_grafico.set_index('modelo'), color="#29b5e8")
-            else:
-                st.info("Aguardando dados de buscas para gerar o gráfico.")
         except Exception as e:
-            st.error("Erro ao gerar gráfico de tendências.")
+            st.error("Erro ao gerar gráfico.")
 
     with tab_usuarios:
         st.markdown("### 🔑 Criar Novo Código de Acesso")
-        
         with st.form("form_novo_usuario", clear_on_submit=True):
             col_u1, col_u2 = st.columns(2)
             new_user = col_u1.text_input("Username (Ex: joao_pesquisa)")
@@ -108,10 +128,10 @@ def render_admin():
                                 VALUES (:u, :c, :p)
                             """), {"u": new_user, "c": new_code, "p": new_perfil})
                             conn.commit()
-                        st.success(f"Acesso criado: {new_user} agora é {new_perfil}!")
+                        st.success(f"Acesso criado para {new_user}!")
                         st.rerun() 
                     except Exception as e:
-                        st.error(f"Erro: Este username já existe.")
+                        st.error("Erro: Este username já existe ou houve falha no banco.")
                 else:
                     st.warning("Preencha todos os campos.")
 
